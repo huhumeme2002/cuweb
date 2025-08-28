@@ -40,8 +40,8 @@ module.exports = async function handler(req, res) {
     client = await pool.connect();
 
     if (req.method === 'GET') {
-      // Get blocked users
-      const result = await client.query(`
+      // Get blocked users from key attempts
+      const keyAttempts = await client.query(`
         SELECT 
           ka.user_id,
           u.username,
@@ -50,6 +50,7 @@ module.exports = async function handler(req, res) {
           ka.blocked_until,
           ka.last_attempt,
           ka.ip_address,
+          'key_attempts' as block_type,
           CASE 
             WHEN ka.blocked_until > NOW() THEN true 
             ELSE false 
@@ -61,16 +62,83 @@ module.exports = async function handler(req, res) {
         ORDER BY ka.last_attempt DESC
       `);
 
+      // Get blocked IPs from rate limiting  
+      const ipBlocks = await client.query(`
+        SELECT 
+          NULL as user_id,
+          'Unknown User' as username,
+          NULL as email,
+          ipl.request_count as failed_count,
+          ipl.blocked_until,
+          ipl.last_request as last_attempt,
+          ipl.ip_address,
+          'ip_rate_limit' as block_type,
+          CASE 
+            WHEN ipl.blocked_until > NOW() THEN true 
+            ELSE false 
+          END as is_currently_blocked,
+          EXTRACT(EPOCH FROM (ipl.blocked_until - NOW()))/60 as remaining_minutes
+        FROM ip_rate_limits ipl
+        WHERE ipl.blocked_until IS NOT NULL AND ipl.blocked_until > NOW()
+        ORDER BY ipl.last_request DESC
+      `);
+
+      // Combine results
+      const allBlocked = [...keyAttempts.rows, ...ipBlocks.rows];
+      
       res.json({
-        blockedUsers: result.rows
+        blockedUsers: keyAttempts.rows,
+        blockedIPs: ipBlocks.rows,
+        allBlocked: allBlocked
       });
 
     } else if (req.method === 'POST') {
-      // Unblock user
-      const { targetUserId, action } = req.body;
+      // Unblock user or IP
+      const { targetUserId, action, targetIP } = req.body;
       
+      if (!targetUserId && !targetIP) {
+        return res.status(400).json({ error: 'User ID hoặc IP address bắt buộc' });
+      }
+
+      // Handle IP unblocking
+      if (targetIP) {
+        if (action === 'unblock') {
+          // Unblock IP from rate limiting
+          const deleteResult = await client.query(
+            'DELETE FROM ip_rate_limits WHERE ip_address = $1',
+            [targetIP]
+          );
+
+          res.json({
+            message: `Đã gỡ khóa IP ${targetIP} thành công`,
+            targetIP: targetIP,
+            recordsDeleted: deleteResult.rowCount,
+            unblocked_by: userId,
+            unblocked_at: new Date().toISOString()
+          });
+          return;
+        } else if (action === 'reset') {
+          // Reset IP rate limiting
+          const updateResult = await client.query(`
+            UPDATE ip_rate_limits 
+            SET blocked_until = NULL, is_suspicious = false
+            WHERE ip_address = $1
+          `, [targetIP]);
+
+          res.json({
+            message: `Đã reset khóa IP ${targetIP}`,
+            targetIP: targetIP,
+            recordsUpdated: updateResult.rowCount,
+            reset_by: userId,
+            reset_at: new Date().toISOString()
+          });
+          return;
+        }
+      }
+
+      // Handle user unblocking
       if (!targetUserId) {
-        return res.status(400).json({ error: 'User ID bắt buộc' });
+        return res.status(400).json({ error: 'User ID bắt buộc cho user operations' });
       }
 
       // Kiểm tra user có tồn tại không

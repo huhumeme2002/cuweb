@@ -175,35 +175,123 @@ module.exports = async function handler(req, res) {
         [userId, keyData.id]
       );
 
-      // Cập nhật requests cho user
-      const userUpdateResult = await client.query(
-        `UPDATE users 
-         SET requests = requests + $1 
-         WHERE id = $2 
-         RETURNING username, requests`,
-        [keyData.requests, userId]
+      // Lấy thông tin user hiện tại
+      const currentUserResult = await client.query(
+        `SELECT username, requests, expiry_time, is_expired FROM users WHERE id = $1`,
+        [userId]
       );
 
+      if (currentUserResult.rows.length === 0) {
+        throw new Error('User not found');
+      }
+
+      const currentUser = currentUserResult.rows[0];
+
+      // Logic mới: Key có thời hạn THAY THẾ hoàn toàn, key vô thời hạn CỘNG DỒN
+      let newExpiryTime = currentUser.expiry_time;
+      let shouldReplaceCompletely = false;
+      let shouldUpdateExpiry = false;
+      
+      if (keyData.expires_at) {
+        // Key có thời hạn → THAY THẾ hoàn toàn
+        const keyExpiryDate = new Date(keyData.expires_at);
+        const now = new Date();
+        
+        // Tính thời gian hết hạn dựa trên key
+        const hoursToAdd = Math.ceil((keyExpiryDate - now) / (1000 * 60 * 60));
+        
+        if (hoursToAdd > 0) {
+          const keyBasedExpiry = new Date();
+          keyBasedExpiry.setHours(keyBasedExpiry.getHours() + hoursToAdd);
+          
+          newExpiryTime = keyBasedExpiry;
+          shouldReplaceCompletely = true; // THAY THẾ requests hoàn toàn
+          shouldUpdateExpiry = true;
+        }
+      }
+
+      // Cập nhật requests và expiry time cho user
+      let updateQuery, updateParams;
+      
+      if (shouldReplaceCompletely) {
+        // Key có thời hạn: THAY THẾ hoàn toàn requests + expiry time
+        updateQuery = `UPDATE users 
+                       SET requests = $1, expiry_time = $2, is_expired = false, updated_at = NOW()
+                       WHERE id = $3 
+                       RETURNING username, requests, expiry_time`;
+        updateParams = [keyData.requests, newExpiryTime, userId];
+      } else {
+        // Key vô thời hạn: CỘNG DỒN requests, không thay đổi expiry
+        updateQuery = `UPDATE users 
+                       SET requests = requests + $1, updated_at = NOW()
+                       WHERE id = $2 
+                       RETURNING username, requests, expiry_time`;
+        updateParams = [keyData.requests, userId];
+      }
+
+      const userUpdateResult = await client.query(updateQuery, updateParams);
+      
       if (userUpdateResult.rows.length === 0) {
         throw new Error('User not found');
       }
 
       const updatedUser = userUpdateResult.rows[0];
 
-      // Ghi lại transaction
+      // Ghi lại transaction với thông tin chính xác
+      let transactionDescription;
+      let transactionAmount;
+      
+      if (shouldReplaceCompletely) {
+        // Key có thời hạn: thay thế hoàn toàn
+        const oldRequests = currentUser.requests;
+        transactionAmount = keyData.requests - oldRequests; // Có thể âm nếu key mới ít hơn
+        transactionDescription = `Đổi key có thời hạn: ${keyData.key_value} (Thay thế: ${oldRequests} → ${keyData.requests} requests, Thời hạn: ${newExpiryTime.toLocaleString('vi-VN')})`;
+      } else {
+        // Key vô thời hạn: cộng dồn
+        transactionAmount = keyData.requests;
+        transactionDescription = `Đổi key vô thời hạn: ${keyData.key_value} (+${keyData.requests} requests)`;
+      }
+      
       await client.query(
         `INSERT INTO request_transactions (user_id, requests_amount, description, created_at) 
          VALUES ($1, $2, $3, NOW())`,
-        [userId, keyData.requests, `Đổi key: ${keyData.key_value}`]
+        [userId, transactionAmount, transactionDescription]
       );
 
       await client.query('COMMIT');
 
+      // Tạo response message chính xác
+      let responseMessage;
+      
+      if (shouldReplaceCompletely) {
+        responseMessage = `Đổi key thành công! ${keyData.requests} requests`;
+        const timeRemaining = Math.ceil((newExpiryTime - new Date()) / (1000 * 60 * 60));
+        responseMessage += ` | Thời hạn: ${timeRemaining}h`;
+      } else {
+        responseMessage = `Đổi key thành công! +${keyData.requests} requests`;
+        if (currentUser.expiry_time) {
+          const timeRemaining = Math.ceil((new Date(currentUser.expiry_time) - new Date()) / (1000 * 60 * 60));
+          if (timeRemaining > 0) {
+            responseMessage += ` | Thời hạn còn: ${timeRemaining}h`;
+          }
+        }
+      }
+
       res.status(200).json({
-        message: 'Đổi key thành công!',
-        requests_added: keyData.requests,
+        message: responseMessage,
+        requests_change: shouldReplaceCompletely ? 
+          `Thay thế: ${currentUser.requests} → ${keyData.requests}` : 
+          `Cộng thêm: +${keyData.requests}`,
         current_requests: updatedUser.requests,
-        key_value: keyData.key_value
+        key_value: keyData.key_value,
+        key_type: shouldReplaceCompletely ? 'có thời hạn' : 'vô thời hạn',
+        expiry_updated: shouldUpdateExpiry,
+        expiry_time: updatedUser.expiry_time,
+        expiry_info: shouldUpdateExpiry 
+          ? `Thời hạn mới: ${newExpiryTime.toLocaleString('vi-VN')}`
+          : currentUser.expiry_time 
+            ? `Thời hạn hiện tại: ${new Date(currentUser.expiry_time).toLocaleString('vi-VN')}`
+            : 'Key không có thời hạn'
       });
 
     } catch (transactionError) {

@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test Key Có Thời Hạn</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .info { background: #e3f2fd; padding: 15px; border-radius: 5px; margin: 10px 0; }
+        .test { background: #fff3e0; padding: 15px; border-radius: 5px; margin: 10px 0; }
+        .result { background: #e8f5e8; padding: 15px; border-radius: 5px; margin: 10px 0; }
+        .error { background: #ffebee; padding: 15px; border-radius: 5px; margin: 10px 0; }
+        code { background: #f5f5f5; padding: 2px 4px; border-radius: 3px; }
+    </style>
+</head>
+<body>
+    <h1>🧪 Test Key Logic</h1>
+    
+    <div class="info">
+        <h3>📋 Từ debug output:</h3>
+        <p><strong>User hiện tại:</strong> cxxcxxcxxxxxxxxxxx</p>
+        <p><strong>Requests:</strong> 400</p>
+        <p><strong>Expiry:</strong> 2025-08-29T02:32:43.543Z</p>
+    </div>
+
+    <div class="info">
+        <h3>🔑 Key vừa đổi:</h3>
+        <p><strong>Key:</strong> VIP-815652-OCA9A0</p>
+        <p><strong>Requests:</strong> 100</p>
+        <p><strong>Expires at:</strong> <code>null</code> (VÔ THỜI HẠN!)</p>
+        <p><strong>Result:</strong> Cộng dồn 300 + 100 = 400 ✅ (Đúng logic!)</p>
+    </div>
+
+    <div class="test">
+        <h3>🔬 Để test logic THAY THẾ:</h3>
+        <p>Hãy đổi key <strong>VIP-814509-ACDRPX</strong></p>
+        <p><strong>Key này có:</strong></p>
+        <ul>
+            <li>Requests: 100</li>
+            <li>Expires at: <code>2025-08-29T02:40:14.509Z</code> (CÓ THỜI HẠN!)</li>
+        </ul>
+        <p><strong>Kỳ vọng:</strong> 400 requests → 100 requests + thời hạn mới</p>
+    </div>
+
+    <div class="info">
+        <h3>📝 Logic hiện tại:</h3>
+        <ul>
+            <li><strong>Key có expires_at ≠ null</strong> → THAY THẾ hoàn toàn</li>
+            <li><strong>Key có expires_at = null</strong> → CỘNG DỒN</li>
+        </ul>
+    </div>
+
+    <div class="result" id="result" style="display: none;">
+        <h3>✅ Kết quả test:</h3>
+        <div id="result-content"></div>
+    </div>
+
+    <script>
+        console.log('=== Key Logic Test ===');
+        console.log('User hiện tại: 400 requests');
+        console.log('Key vô thời hạn: VIP-815652-OCA9A0 → Cộng dồn → 400 requests ✅');
+        console.log('');
+        console.log('Để test THAY THẾ: hãy đổi key VIP-814509-ACDRPX (có thời hạn)');
+        console.log('Kỳ vọng: 400 → 100 requests + thời hạn mới');
+    </script>
+</body>
+</html>
