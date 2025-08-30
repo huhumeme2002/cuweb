@@ -1,10 +1,5 @@
-const { Pool } = require('pg');
+const { executeQuery, getClient } = require('./db-utils');
 const { verifyAdmin } = require('./admin-middleware');
-
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: { rejectUnauthorized: false }
-});
 
 module.exports = async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -37,10 +32,10 @@ module.exports = async function handler(req, res) {
 
   let client;
   try {
-    client = await pool.connect();
+    client = await getClient();
 
-    // Create notifications table if it doesn't exist
-    await client.query(`
+    // Create notifications table if it doesn't exist (with retry)
+    await executeQuery(`
       CREATE TABLE IF NOT EXISTS notifications (
         id SERIAL PRIMARY KEY,
         title VARCHAR(255) NOT NULL,
@@ -53,8 +48,8 @@ module.exports = async function handler(req, res) {
       );
     `);
 
-    // Create index for better performance
-    await client.query(`
+    // Create index for better performance (with retry)
+    await executeQuery(`
       CREATE INDEX IF NOT EXISTS idx_notifications_target_user_created 
       ON notifications(target_user_id, created_at DESC);
     `);

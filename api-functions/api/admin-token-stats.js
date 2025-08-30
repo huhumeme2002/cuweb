@@ -1,10 +1,5 @@
-const { Pool } = require('pg');
 const jwt = require('jsonwebtoken');
-
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: { rejectUnauthorized: false }
-});
+const { executeQuery } = require('../db-utils');
 
 module.exports = async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -39,18 +34,15 @@ module.exports = async function handler(req, res) {
     return res.status(403).json({ error: 'Admin access required' });
   }
 
-  let client;
   try {
-    client = await pool.connect();
-
     // Get total uploaded tokens from uploaded_tokens table
-    const totalTokensResult = await client.query(`
+    const totalTokensResult = await executeQuery(`
       SELECT COUNT(*) as total_tokens
       FROM uploaded_tokens
     `);
 
     // Get used tokens from token_usage_log table
-    const usedTokensResult = await client.query(`
+    const usedTokensResult = await executeQuery(`
       SELECT COUNT(*) as used_tokens
       FROM token_usage_log
     `);
@@ -74,7 +66,5 @@ module.exports = async function handler(req, res) {
       error: 'Lỗi máy chủ',
       details: error.message
     });
-  } finally {
-    if (client) client.release();
   }
 };

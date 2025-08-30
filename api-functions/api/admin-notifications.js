@@ -1,10 +1,5 @@
-const { Pool } = require('pg');
+const { executeQuery } = require('./db-utils');
 const { verifyAdmin } = require('./admin-middleware');
-
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: { rejectUnauthorized: false }
-});
 
 module.exports = async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');

@@ -72,6 +72,22 @@
     {
       "source": "/api/generate-token",
       "destination": "/api/generate-token"
+    },
+    {
+      "source": "/api/admin-delete-notification",
+      "destination": "/api/admin-delete-notification"
+    },
+    {
+      "source": "/api/admin-notifications",
+      "destination": "/api/admin-notifications"
+    },
+    {
+      "source": "/api/admin-send-notification",
+      "destination": "/api/admin-send-notification"
+    },
+    {
+      "source": "/api/notifications",
+      "destination": "/api/notifications"
     }
   ]
 }

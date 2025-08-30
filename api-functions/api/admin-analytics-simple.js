@@ -1,10 +1,5 @@
-const { Pool } = require('pg');
 const jwt = require('jsonwebtoken');
-
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: { rejectUnauthorized: false }
-});
+const { executeQuery } = require('../db-utils');
 
 module.exports = async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -39,28 +34,22 @@ module.exports = async function handler(req, res) {
     return res.status(403).json({ error: 'Admin access required' });
   }
 
-  let client;
   try {
-    client = await pool.connect();
+    // Basic overview stats - simplified queries
+    const totalUsersResult = await executeQuery(`SELECT COUNT(*) as count FROM users`);
+    const activeUsersResult = await executeQuery(`SELECT COUNT(*) as count FROM users WHERE created_at > NOW() - INTERVAL '30 days'`);
+    const usedKeysResult = await executeQuery(`SELECT COUNT(*) as count FROM uploaded_tokens WHERE is_used = true`);
+    const totalTokensResult = await executeQuery(`SELECT COUNT(*) as count FROM token_usage_log`);
 
-    // Basic overview stats
-    const overviewResult = await client.query(`
-      SELECT 
-        (SELECT COUNT(*) FROM users) as total_users,
-        (SELECT COUNT(*) FROM users WHERE created_at > NOW() - INTERVAL '30 days') as active_users,
-        (SELECT COUNT(*) FROM uploaded_tokens WHERE used_by IS NOT NULL) as used_keys,
-        (SELECT COUNT(*) FROM uploaded_tokens) as total_tokens
-    `);
-
-    const overview = overviewResult.rows[0] || {
-      total_users: 0,
-      active_users: 0,
-      used_keys: 0,
-      total_tokens: 0
+    const overview = {
+      total_users: parseInt(totalUsersResult.rows[0].count) || 0,
+      active_users: parseInt(activeUsersResult.rows[0].count) || 0,
+      used_keys: parseInt(usedKeysResult.rows[0].count) || 0,
+      total_tokens: parseInt(totalTokensResult.rows[0].count) || 0
     };
 
     // Daily stats for last 7 days
-    const dailyStatsResult = await client.query(`
+    const dailyStatsResult = await executeQuery(`
       SELECT 
         DATE(created_at) as date,
         COUNT(*) as registrations
@@ -72,7 +61,7 @@ module.exports = async function handler(req, res) {
     `);
 
     // Top users
-    const topUsersResult = await client.query(`
+    const topUsersResult = await executeQuery(`
       SELECT username, requests
       FROM users
       ORDER BY requests DESC
@@ -80,7 +69,7 @@ module.exports = async function handler(req, res) {
     `);
 
     // Recent activity
-    const recentActivityResult = await client.query(`
+    const recentActivityResult = await executeQuery(`
       SELECT 
         u.username,
         rt.requests_amount as amount,
@@ -93,11 +82,11 @@ module.exports = async function handler(req, res) {
     `);
 
     // Key statistics
-    const keyStatsResult = await client.query(`
+    const keyStatsResult = await executeQuery(`
       SELECT 
         requests,
         COUNT(*) as key_count,
-        COUNT(CASE WHEN used_by IS NOT NULL THEN 1 END) as used_count
+        COUNT(CASE WHEN is_used = true THEN 1 END) as used_count
       FROM uploaded_tokens
       GROUP BY requests
       ORDER BY requests
@@ -124,7 +113,5 @@ module.exports = async function handler(req, res) {
       error: 'Lỗi máy chủ',
       details: error.message
     });
-  } finally {
-    if (client) client.release();
   }
 };

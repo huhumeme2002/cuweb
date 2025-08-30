@@ -1,10 +1,5 @@
-const { Pool } = require('pg');
+const { executeQuery } = require('./db-utils');
 const jwt = require('jsonwebtoken');
-
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: { rejectUnauthorized: false }
-});
 
 module.exports = async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -32,12 +27,9 @@ module.exports = async function handler(req, res) {
     return res.status(401).json({ error: 'Invalid token' });
   }
 
-  let client;
   try {
-    client = await pool.connect();
-
-    // Get user notifications
-    const result = await client.query(`
+    // Get user notifications with retry logic
+    const result = await executeQuery(`
       SELECT 
         id,
         title,
@@ -71,7 +63,5 @@ module.exports = async function handler(req, res) {
         details: error.message
       });
     }
-  } finally {
-    if (client) client.release();
   }
 };
